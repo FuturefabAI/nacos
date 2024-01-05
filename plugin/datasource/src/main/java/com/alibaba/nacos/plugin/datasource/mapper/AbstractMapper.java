@@ -90,7 +90,11 @@ public abstract class AbstractMapper implements Mapper {
         sql.append(getTableName()).append(" ").append("SET ");
         
         for (int i = 0; i < columns.size(); i++) {
-            sql.append(columns.get(i)).append(" = ").append("?");
+            if (columns.get(i).equals("tenant_id=null")) {
+                sql.append("tenant_id").append(" ").append("is").append(" NULL ");
+            } else {
+                sql.append(columns.get(i)).append(" = ").append("?");
+            }
             if (i != columns.size() - 1) {
                 sql.append(",");
             }
@@ -112,7 +116,12 @@ public abstract class AbstractMapper implements Mapper {
         String method = "DELETE ";
         sql.append(method).append("FROM ").append(getTableName()).append(" ").append("WHERE ");
         for (int i = 0; i < params.size(); i++) {
-            sql.append(params.get(i)).append(" ").append("=").append(" ? ");
+            if (params.get(i).equals("tenant_id=null")){
+                sql.append("tenant_id").append(" ").append("is").append(" NULL ");
+            } else {
+                sql.append(params.get(i)).append(" ").append("=").append(" ? ");
+            }
+
             if (i != params.size() - 1) {
                 sql.append("AND ");
             }
@@ -143,11 +152,19 @@ public abstract class AbstractMapper implements Mapper {
     public String[] getPrimaryKeyGeneratedKeys() {
         return new String[] {"id"};
     }
-    
+
     private void appendWhereClause(List<String> where, StringBuilder sql) {
         sql.append("WHERE ");
         for (int i = 0; i < where.size(); i++) {
-            sql.append(where.get(i)).append(" = ").append("?");
+            //sql.append(where.get(i)).append(" = ").append("?");
+            //if (i != where.size() - 1) {
+            //    sql.append(" AND ");
+            //}
+            if (where.get(i).contains("tenant_id=null")){
+                sql.append("tenant_id is NULL");
+            }else{
+                sql.append(where.get(i)).append(" = ").append("?");
+            }
             if (i != where.size() - 1) {
                 sql.append(" AND ");
             }

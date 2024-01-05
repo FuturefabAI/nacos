@@ -22,15 +22,7 @@ import com.alibaba.nacos.common.utils.Pair;
 import com.alibaba.nacos.common.utils.StringUtils;
 import com.alibaba.nacos.config.server.constant.Constants;
 import com.alibaba.nacos.config.server.enums.FileTypeEnum;
-import com.alibaba.nacos.config.server.model.ConfigAdvanceInfo;
-import com.alibaba.nacos.config.server.model.ConfigAllInfo;
-import com.alibaba.nacos.config.server.model.ConfigInfo;
-import com.alibaba.nacos.config.server.model.ConfigInfoBase;
-import com.alibaba.nacos.config.server.model.ConfigInfoStateWrapper;
-import com.alibaba.nacos.config.server.model.ConfigInfoWrapper;
-import com.alibaba.nacos.config.server.model.ConfigKey;
-import com.alibaba.nacos.config.server.model.ConfigOperateResult;
-import com.alibaba.nacos.config.server.model.SameConfigPolicy;
+import com.alibaba.nacos.config.server.model.*;
 import com.alibaba.nacos.config.server.service.repository.ConfigInfoPersistService;
 import com.alibaba.nacos.config.server.service.repository.HistoryConfigInfoPersistService;
 import com.alibaba.nacos.config.server.utils.LogUtil;
@@ -45,6 +37,8 @@ import com.alibaba.nacos.plugin.datasource.MapperManager;
 import com.alibaba.nacos.plugin.datasource.constants.CommonConstant;
 import com.alibaba.nacos.plugin.datasource.constants.FieldConstant;
 import com.alibaba.nacos.plugin.datasource.constants.TableConstant;
+import com.alibaba.nacos.plugin.datasource.impl.oracle.ConfigInfoMapperByOracle;
+import com.alibaba.nacos.plugin.datasource.impl.oracle.ConfigTagsRelationMapperByOracle;
 import com.alibaba.nacos.plugin.datasource.mapper.ConfigInfoMapper;
 import com.alibaba.nacos.plugin.datasource.mapper.ConfigTagsRelationMapper;
 import com.alibaba.nacos.plugin.datasource.model.MapperContext;
@@ -54,11 +48,7 @@ import com.alibaba.nacos.sys.env.EnvUtil;
 import org.apache.commons.collections.CollectionUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Conditional;
-import org.springframework.dao.DataAccessException;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.dao.IncorrectResultSizeDataAccessException;
+import org.springframework.dao.*;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCreator;
@@ -76,21 +66,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
-import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.CONFIG_ADVANCE_INFO_ROW_MAPPER;
-import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.CONFIG_ALL_INFO_ROW_MAPPER;
-import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.CONFIG_INFO_BASE_ROW_MAPPER;
-import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.CONFIG_INFO_ROW_MAPPER;
-import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.CONFIG_INFO_STATE_WRAPPER_ROW_MAPPER;
-import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.CONFIG_INFO_WRAPPER_ROW_MAPPER;
-import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.CONFIG_KEY_ROW_MAPPER;
+import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.*;
 
 /**
  * ExternalConfigInfoPersistServiceImpl.
@@ -477,8 +455,14 @@ public class ExternalConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         try {
             ConfigInfoMapper configInfoMapper = mapperManager
                     .findMapper(dataSourceService.getDataSourceType(), TableConstant.CONFIG_INFO);
-            jt.update(configInfoMapper.delete(Arrays.asList("data_id", "group_id", "tenant_id")), dataId, group,
-                    tenantTmp);
+            if (StringUtils.isBlank(tenant) && configInfoMapper instanceof  ConfigInfoMapperByOracle){
+                jt.update(configInfoMapper.delete(Arrays.asList("data_id", "group_id", "tenant_id=null")), dataId,
+                        group);
+            } else {
+                jt.update(configInfoMapper.delete(Arrays.asList("data_id", "group_id", "tenant_id")), dataId, group,
+                        tenantTmp);
+            }
+
         } catch (CannotGetJdbcConnectionException e) {
             LogUtil.FATAL_LOG.error("[db-error] " + e, e);
             throw e;
@@ -671,13 +655,23 @@ public class ExternalConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
             ConfigInfoMapper configInfoMapper = mapperManager
                     .findMapper(dataSourceService.getDataSourceType(), TableConstant.CONFIG_INFO);
             Timestamp now = new Timestamp(System.currentTimeMillis());
-            
-            jt.update(configInfoMapper.update(Arrays
-                            .asList("content", "md5", "src_ip", "src_user", "gmt_modified", "app_name", "c_desc", "c_use",
-                                    "effect", "type", "c_schema", "encrypted_data_key"),
-                    Arrays.asList("data_id", "group_id", "tenant_id")), configInfo.getContent(), md5Tmp, srcIp, srcUser,
-                    now, appNameTmp, desc, use, effect, type, schema, encryptedDataKey, configInfo.getDataId(),
-                    configInfo.getGroup(), tenantTmp);
+
+            if (StringUtils.isBlank(tenantTmp) && configInfoMapper instanceof ConfigInfoMapperByOracle){
+                jt.update(configInfoMapper.update(Arrays
+                                        .asList("content", "md5", "src_ip", "src_user", "gmt_modified", "app_name", "c_desc", "c_use",
+                                                "effect", "type", "c_schema", "encrypted_data_key"),
+                                Arrays.asList("data_id", "group_id", "tenant_id=null")), configInfo.getContent(), md5Tmp, srcIp, srcUser,
+                        now, appNameTmp, desc, use, effect, type, schema, encryptedDataKey, configInfo.getDataId(),
+                        configInfo.getGroup());
+            } else {
+                jt.update(configInfoMapper.update(Arrays
+                                        .asList("content", "md5", "src_ip", "src_user", "gmt_modified", "app_name", "c_desc", "c_use",
+                                                "effect", "type", "c_schema", "encrypted_data_key"),
+                                Arrays.asList("data_id", "group_id", "tenant_id")), configInfo.getContent(), md5Tmp, srcIp, srcUser,
+                        now, appNameTmp, desc, use, effect, type, schema, encryptedDataKey, configInfo.getDataId(),
+                        configInfo.getGroup(), tenantTmp);
+            }
+
         } catch (CannotGetJdbcConnectionException e) {
             LogUtil.FATAL_LOG.error("[db-error] " + e, e);
             throw e;
@@ -770,10 +764,18 @@ public class ExternalConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         try {
             ConfigInfoMapper configInfoMapper = mapperManager
                     .findMapper(dataSourceService.getDataSourceType(), TableConstant.CONFIG_INFO);
-            return this.jt.queryForObject(configInfoMapper.select(Arrays
-                            .asList("id", "data_id", "group_id", "tenant_id", "app_name", "content", "md5", "type",
-                                    "encrypted_data_key", "gmt_modified"), Arrays.asList("data_id", "group_id", "tenant_id")),
-                    new Object[] {dataId, group, tenantTmp}, CONFIG_INFO_WRAPPER_ROW_MAPPER);
+            if (StringUtils.isBlank(tenant) && configInfoMapper instanceof ConfigInfoMapperByOracle){
+                return this.jt.queryForObject(configInfoMapper.select(Arrays
+                                .asList("id", "data_id", "group_id", "tenant_id", "app_name", "content", "md5", "type",
+                                        "encrypted_data_key", "gmt_modified"), Arrays.asList("data_id", "group_id", "tenant_id=null")),
+                        new Object[] {dataId, group}, CONFIG_INFO_WRAPPER_ROW_MAPPER);
+            } else {
+                return this.jt.queryForObject(configInfoMapper.select(Arrays
+                                .asList("id", "data_id", "group_id", "tenant_id", "app_name", "content", "md5", "type",
+                                        "encrypted_data_key", "gmt_modified"), Arrays.asList("data_id", "group_id", "tenant_id")),
+                        new Object[] {dataId, group, tenantTmp}, CONFIG_INFO_WRAPPER_ROW_MAPPER);
+            }
+
         } catch (EmptyResultDataAccessException e) { // Indicates that the data does not exist, returns null.
             return null;
         } catch (CannotGetJdbcConnectionException e) {
@@ -1264,15 +1266,29 @@ public class ExternalConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
     public List<String> selectTagByConfig(String dataId, String group, String tenant) {
         ConfigTagsRelationMapper configTagsRelationMapper = mapperManager
                 .findMapper(dataSourceService.getDataSourceType(), TableConstant.CONFIG_TAGS_RELATION);
-        String sql = configTagsRelationMapper
-                .select(Collections.singletonList("tag_name"), Arrays.asList("data_id", "group_id", "tenant_id"));
-        try {
-            return jt.queryForList(sql, new Object[] {dataId, group, tenant}, String.class);
-        } catch (IncorrectResultSizeDataAccessException e) {
-            return null;
-        } catch (CannotGetJdbcConnectionException e) {
-            LogUtil.FATAL_LOG.error("[db-error] " + e, e);
-            throw e;
+
+        if (StringUtils.isBlank(tenant) && configTagsRelationMapper instanceof ConfigTagsRelationMapperByOracle) {
+            String sql = configTagsRelationMapper
+                    .select(Collections.singletonList("tag_name"), Arrays.asList("data_id", "group_id", "tenant_id=null"));
+            try {
+                return jt.queryForList(sql, new Object[] {dataId, group}, String.class);
+            } catch (IncorrectResultSizeDataAccessException e) {
+                return null;
+            } catch (CannotGetJdbcConnectionException e) {
+                LogUtil.FATAL_LOG.error("[db-error] " + e, e);
+                throw e;
+            }
+        } else {
+            String sql = configTagsRelationMapper
+                    .select(Collections.singletonList("tag_name"), Arrays.asList("data_id", "group_id", "tenant_id"));
+            try {
+                return jt.queryForList(sql, new Object[] {dataId, group, tenant}, String.class);
+            } catch (IncorrectResultSizeDataAccessException e) {
+                return null;
+            } catch (CannotGetJdbcConnectionException e) {
+                LogUtil.FATAL_LOG.error("[db-error] " + e, e);
+                throw e;
+            }
         }
     }
     
@@ -1340,11 +1356,20 @@ public class ExternalConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
             List<String> configTagList = this.selectTagByConfig(dataId, group, tenant);
             ConfigInfoMapper configInfoMapper = mapperManager
                     .findMapper(dataSourceService.getDataSourceType(), TableConstant.CONFIG_INFO);
-            ConfigAllInfo configAdvance = this.jt.queryForObject(configInfoMapper.select(Arrays
-                            .asList("id", "data_id", "group_id", "tenant_id", "app_name", "content", "md5", "gmt_create",
-                                    "gmt_modified", "src_user", "src_ip", "c_desc", "c_use", "effect", "type", "c_schema",
-                                    "encrypted_data_key"), Arrays.asList("data_id", "group_id", "tenant_id")),
-                    new Object[] {dataId, group, tenantTmp}, CONFIG_ALL_INFO_ROW_MAPPER);
+            ConfigAllInfo configAdvance;
+            if (StringUtils.isBlank(tenant) && configInfoMapper instanceof ConfigInfoMapperByOracle){
+                configAdvance = this.jt.queryForObject(configInfoMapper.select(Arrays
+                                .asList("id", "data_id", "group_id", "tenant_id", "app_name", "content", "md5", "gmt_create",
+                                        "gmt_modified", "src_user", "src_ip", "c_desc", "c_use", "effect", "type", "c_schema",
+                                        "encrypted_data_key"), Arrays.asList("data_id", "group_id", "tenant_id=null")),
+                        new Object[] {dataId, group}, CONFIG_ALL_INFO_ROW_MAPPER);
+            } else {
+                configAdvance = this.jt.queryForObject(configInfoMapper.select(Arrays
+                                .asList("id", "data_id", "group_id", "tenant_id", "app_name", "content", "md5", "gmt_create",
+                                        "gmt_modified", "src_user", "src_ip", "c_desc", "c_use", "effect", "type", "c_schema",
+                                        "encrypted_data_key"), Arrays.asList("data_id", "group_id", "tenant_id")),
+                        new Object[] {dataId, group, tenantTmp}, CONFIG_ALL_INFO_ROW_MAPPER);
+            }
             if (configTagList != null && !configTagList.isEmpty()) {
                 StringBuilder configTagsTmp = new StringBuilder();
                 for (String configTag : configTagList) {

@@ -35,6 +35,7 @@ import com.alibaba.nacos.plugin.datasource.MapperManager;
 import com.alibaba.nacos.plugin.datasource.constants.CommonConstant;
 import com.alibaba.nacos.plugin.datasource.constants.FieldConstant;
 import com.alibaba.nacos.plugin.datasource.constants.TableConstant;
+import com.alibaba.nacos.plugin.datasource.impl.oracle.ConfigInfoBetaMapperByOracle;
 import com.alibaba.nacos.plugin.datasource.mapper.ConfigInfoBetaMapper;
 import com.alibaba.nacos.plugin.datasource.model.MapperContext;
 import com.alibaba.nacos.plugin.datasource.model.MapperResult;
@@ -247,6 +248,12 @@ public class ExternalConfigInfoBetaPersistServiceImpl implements ConfigInfoBetaP
         try {
             ConfigInfoBetaMapper configInfoBetaMapper = mapperManager.findMapper(dataSourceService.getDataSourceType(),
                     TableConstant.CONFIG_INFO_BETA);
+            if (StringUtils.isBlank(tenant) && configInfoBetaMapper instanceof ConfigInfoBetaMapperByOracle){
+                return this.jt.queryForObject(configInfoBetaMapper.select(
+                                Arrays.asList("id", "data_id", "group_id", "tenant_id", "app_name", "content", "beta_ips",
+                                        "encrypted_data_key", "gmt_modified"), Arrays.asList("data_id", "group_id", "tenant_id=null")),
+                        new Object[] {dataId, group}, CONFIG_INFO_BETA_WRAPPER_ROW_MAPPER);
+            }
             return this.jt.queryForObject(configInfoBetaMapper.select(
                             Arrays.asList("id", "data_id", "group_id", "tenant_id", "app_name", "content", "beta_ips",
                                     "encrypted_data_key", "gmt_modified"), Arrays.asList("data_id", "group_id", "tenant_id")),

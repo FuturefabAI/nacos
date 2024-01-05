@@ -19,9 +19,9 @@ package com.alibaba.nacos.config.server.service;
 import com.alibaba.nacos.common.utils.Pair;
 import com.alibaba.nacos.config.server.model.ConfigHistoryInfo;
 import com.alibaba.nacos.config.server.model.ConfigInfoWrapper;
-import com.alibaba.nacos.persistence.model.Page;
 import com.alibaba.nacos.config.server.service.repository.ConfigInfoPersistService;
 import com.alibaba.nacos.config.server.service.repository.HistoryConfigInfoPersistService;
+import com.alibaba.nacos.persistence.model.Page;
 import com.alibaba.nacos.plugin.auth.exception.AccessException;
 import com.alibaba.nacos.plugin.encryption.handler.EncryptionHandler;
 import org.springframework.stereotype.Service;
@@ -43,7 +43,7 @@ public class HistoryService {
     private final ConfigInfoPersistService configInfoPersistService;
     
     public HistoryService(HistoryConfigInfoPersistService historyConfigInfoPersistService,
-            ConfigInfoPersistService configInfoPersistService) {
+                          ConfigInfoPersistService configInfoPersistService) {
         this.historyConfigInfoPersistService = historyConfigInfoPersistService;
         this.configInfoPersistService = configInfoPersistService;
     }
@@ -102,10 +102,17 @@ public class HistoryService {
      */
     private void checkHistoryInfoPermission(ConfigHistoryInfo configHistoryInfo, String dataId, String group,
             String namespaceId) throws AccessException {
-        if (!Objects.equals(configHistoryInfo.getDataId(), dataId) || !Objects
-                .equals(configHistoryInfo.getGroup(), group) || !Objects
-                .equals(configHistoryInfo.getTenant(), namespaceId)) {
-            throw new AccessException("Please check dataId, group or namespaceId.");
+        if (configHistoryInfo.getTenant() == null){
+            if (!Objects.equals(configHistoryInfo.getDataId(), dataId) || !Objects
+                    .equals(configHistoryInfo.getGroup(), group)) {
+                throw new AccessException("Please check dataId, group or namespaceId.");
+            }
+        }else{
+            if (!Objects.equals(configHistoryInfo.getDataId(), dataId) || !Objects
+                    .equals(configHistoryInfo.getGroup(), group) || !Objects
+                    .equals(configHistoryInfo.getTenant(), namespaceId)) {
+                throw new AccessException("Please check dataId, group or namespaceId.");
+            }
         }
     }
 }
